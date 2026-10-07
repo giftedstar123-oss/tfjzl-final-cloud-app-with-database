@@ -1,7 +1,7 @@
 from django.shortcuts import render
 from django.http import HttpResponseRedirect
 # <HINT> Import any new Models here
-from .models import Course, Enrollment
+from .models import Course, Enrollment, Submission, Choice
 from django.contrib.auth.models import User
 from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse
@@ -110,7 +110,20 @@ def enroll(request, course_id):
          # Collect the selected choices from exam form
          # Add each selected choice object to the submission object
          # Redirect to show_exam_result with the submission id
-#def submit(request, course_id):
+
+def submit(request, course_id):
+    course = get_object_or_404(Course, pk=course_id)
+    user = request.user
+    enrollment = get_object_or_404(Enrollment, user=user, course=course)
+
+    submission = Submission.objects.create(enrollment=enrollment)
+
+    choice_ids = extract_answers(request)
+    for choice_id in choice_ids:
+        choice = get_object_or_404(Choice, pk=choice_id)
+        submission.choices.add(choice)
+
+    return redirect('onlinecourse:show_exam_result', course_id=course.id, submission_id=submission.id)
 
 
 # An example method to collect the selected choices from the exam form from the request object
@@ -130,7 +143,42 @@ def extract_answers(request):
         # Get the selected choice ids from the submission record
         # For each selected choice, check if it is a correct answer or not
         # Calculate the total score
-#def show_exam_result(request, course_id, submission_id):
+def show_exam_result(request, course_id, submission_id):
+    course = get_object_or_404(Course, pk=course_id)
+    submission = get_object_or_404(Submission, pk=submission_id)
+
+    questions = course.question_set.all()
+    correct_count = 0
+    results = []
+
+    for question in questions:
+        selected_choice = submission.choices.filter(question=question).first()
+        correct_choice = question.choice_set.filter(is_correct=True).first()
+
+        if selected_choice and selected_choice.is_correct:
+            correct_count += 1
+
+        results.append({
+            'question': question,
+            'selected_choice': selected_choice,
+            'correct_choice': correct_choice,
+        })
+
+    total_questions = questions.count()
+    score = 0
+
+    if total_questions > 0:
+        score = int((correct_count / total_questions) * 100)
+
+    context = {
+        'course': course,
+        'submission': submission,
+        'results': results,
+        'score': score,
+        'passed': score >= 80,
+    }
+
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
 
 
 
